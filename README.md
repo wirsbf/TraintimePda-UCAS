@@ -19,6 +19,7 @@
 ---
 
 ## ✨ 核心特性
+<img width="1672" height="941" alt="image" src="https://github.com/user-attachments/assets/69530523-f2bf-469e-b749-f72129ce2b67" />
 
 ### 🎯 自动抢课系统
 - **🤖 全自动流程**: 监控课程名额 → 验证码识别 → 自动提交选课
