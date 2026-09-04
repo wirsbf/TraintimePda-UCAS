@@ -99,7 +99,8 @@ class SepAuthenticationService implements AuthenticationService {
       );
 
       // Redirect to login means session invalid
-      if (response.statusCode == 302) {
+      // (SEP migrated some redirects from 302 to 303, accept both)
+      if (response.statusCode == 302 || response.statusCode == 303) {
         final location = response.headers.value('location') ?? '';
         if (location.contains('loginFrom') || location.contains('slogin')) {
           return false;
@@ -183,6 +184,16 @@ class SepAuthenticationService implements AuthenticationService {
 
     if (body.contains('验证码错误')) {
       return AuthResult.failure('验证码错误');
+    }
+
+    // Device phone verification flow (POST /user/doUserVisitPhone).
+    // SEP may challenge unrecognized devices with an SMS code; the app cannot
+    // complete this flow, so tell the user to trust the device in a browser.
+    if (body.contains('yzPhone') ||
+        body.contains('doUserVisitPhone') ||
+        body.contains('手机验证') ||
+        body.contains('短信验证')) {
+      return AuthResult.failure('触发设备短信验证：请先在浏览器登录一次 SEP 并勾选“信任此设备”，再回到 App 重试');
     }
 
     // Verify login success

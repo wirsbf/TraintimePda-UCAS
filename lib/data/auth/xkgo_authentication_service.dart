@@ -7,9 +7,13 @@ import 'sep_authentication_service.dart';
 
 /// XKGO/XKGODJ course selection system authentication service
 /// 
-/// Handles login to the course selection system with seasonal URL switching:
+/// Establishes the course-system session by following the SEP portal redirect
+/// (businessMenu "选课" link). The real domain is discovered dynamically from
+/// the final redirect target, so semester domain switches no longer break the
+/// app. The legacy month-based guess is kept only as a fallback:
 /// - January-July: xkgo.ucas.ac.cn:3000
 /// - August-December: xkgodj.ucas.ac.cn
+/// (2026-09 实测: 9月门户仍指向 xkgo:3000，按月猜测会错选 xkgodj)
 class XkgoAuthenticationService implements AuthenticationService {
   XkgoAuthenticationService({
     required Dio dio,
@@ -68,8 +72,8 @@ class XkgoAuthenticationService implements AuthenticationService {
         ),
       );
 
-      // Check for redirect to login
-      if (response.statusCode == 302) {
+      // Check for redirect to login (SEP migrated some redirects to 303)
+      if (response.statusCode == 302 || response.statusCode == 303) {
         final location = response.headers.value('location') ?? '';
         if (location.contains('login') || location.contains('sep.ucas')) {
           return false;
@@ -147,8 +151,16 @@ class XkgoAuthenticationService implements AuthenticationService {
     final discoveredBase = '${finalUri.scheme}://${finalUri.host}'
         '${finalUri.hasPort ? ":${finalUri.port}" : ""}';
 
-    // Prefer seasonal logic but store discovered URL
-    _dynamicBaseUrl = _getCurrentXkgoBase();
+    // Prefer the real domain the portal redirected us to.
+    // The month-based guess is only a fallback when discovery lands on SEP
+    // itself (i.e. the redirect chain did not leave the portal, meaning the
+    // session was not established on any course system).
+    // 2026-09 抓包实证: 9月门户仍指向 xkgo:3000，按月猜测会错选 xkgodj。
+    if (!discoveredBase.contains('sep.ucas.ac.cn')) {
+      _dynamicBaseUrl = discoveredBase;
+    } else {
+      _dynamicBaseUrl ??= _getCurrentXkgoBase();
+    }
 
     // Force access to schedule page to finalize session
     await _getFollow('$baseUrl$_schedulePath');
