@@ -21,13 +21,11 @@ class UcasScheduleApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4F46E5)),
         useMaterial3: true,
-        // No const: CupertinoPageTransitionsBuilder is no longer a const
-        // constructor in newer Flutter, which broke CI builds.
-        pageTransitionsTheme: PageTransitionsTheme(
+        // iOS/macOS use Cupertino transitions by default; the explicit
+        // CupertinoPageTransitionsBuilder was removed in newer Flutter.
+        pageTransitionsTheme: const PageTransitionsTheme(
           builders: {
             TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
-            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-            TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
           },
         ),
       ),
