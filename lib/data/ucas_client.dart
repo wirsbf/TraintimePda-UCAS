@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:dio/io.dart';
@@ -91,6 +92,7 @@ class UcasClient {
                     ?.group(1) ??
                 '';
             _sepAuth.markKnownGoodSession(sid);
+            _persistSepSession(sid);
           }
           return handler.next(response);
         },
@@ -195,6 +197,29 @@ class UcasClient {
       Uri.parse(_xkgoAuth.baseUrl),
       [cookie],
     );
+  }
+
+  static const String _persistedSepSessionKey = 'persisted_sep_session';
+
+  /// 持久化 SEP 会话：服务端会话可存活数小时，冷启动恢复后免验证码。
+  Future<void> _persistSepSession(String sid) async {
+    if (sid.isEmpty) return;
+    try {
+      (await SharedPreferences.getInstance())
+          .setString(_persistedSepSessionKey, sid);
+    } catch (_) {}
+  }
+
+  /// 启动时恢复上次登录的 SEP 会话。会话过期时照常走验证码登录。
+  Future<void> restorePersistedSession() async {
+    try {
+      final sid = (await SharedPreferences.getInstance())
+          .getString(_persistedSepSessionKey);
+      if (sid != null && sid.isNotEmpty) {
+        await setSepSessionId(sid);
+        debugPrint('[Session] restored persisted SEP session');
+      }
+    } catch (_) {}
   }
 
   /// Manually set SEP JSESSIONID (for testing/debugging).

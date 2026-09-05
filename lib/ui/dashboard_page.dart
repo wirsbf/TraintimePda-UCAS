@@ -11,9 +11,11 @@ import '../model/sep_portal.dart';
 import 'schedule_page.dart';
 import 'lecture_page.dart';
 import '../util/schedule_utils.dart';
+import '../util/open_url_helper.dart';
 import '../data/cache_manager.dart';
 import 'lecture_detail_dialog.dart';
 import 'webview_page.dart';
+import 'bulletin_detail_page.dart';
 import '../data/services/update_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -658,66 +660,14 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Future<void> _showBulletinDetail(SepBulletin b) async {
-    showDialog(
-      context: context,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-    Map<String, dynamic>? detail;
-    try {
-      detail = await UcasClient.instance.sepPortal.fetchBulletinDetail(b.id);
-    } catch (_) {}
-    if (!mounted) return;
-    Navigator.of(context).pop(); // 关 loading
-
-    final title = '${detail?['fileName'] ?? b.title}';
-    final user = '${detail?['publishUser'] ?? b.department}';
-    final time = '${detail?['publishTime'] ?? b.time}';
-    final noticeUrl = '${detail?['noticeUrl'] ?? ''}';
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title, style: const TextStyle(fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('$user · $time',
-                style: TextStyle(fontSize: 12, color: Colors.grey[500])),
-          ],
-        ),
-        actions: [
-          if (noticeUrl.isNotEmpty)
-            TextButton(
-              onPressed: () => _openNoticeOriginal(
-                  'https://sep.ucas.ac.cn$noticeUrl', title),
-              child: const Text('打开原文'),
-            ),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
-        ],
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => BulletinDetailPage(
+        bulletinId: b.id,
+        fallbackTitle: b.title,
+        department: b.department,
+        time: b.time,
       ),
-    );
-  }
-
-  /// 打开公告原文：移动端内部 WebView（注入 SEP 会话免登录）；
-  /// 桌面端（无 WebView 实现）退回外部浏览器。
-  Future<void> _openNoticeOriginal(String url, String title) async {
-    Navigator.of(context).pop(); // 关详情对话框
-    if (Platform.isAndroid || Platform.isIOS) {
-      final cookie = await UcasClient.instance.sepPortal.currentSepCookieValue();
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => WebViewPage(
-          url: url,
-          title: title,
-          settings: widget.settings,
-          cookies: cookie.isEmpty ? null : {'JSESSIONID': cookie},
-        ),
-      ));
-      return;
-    }
-    final uri = Uri.tryParse(url);
-    if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+    ));
   }
 
   Widget _buildSectionHeader(String title, {bool isRealtime = false, bool isLoading = false}) {

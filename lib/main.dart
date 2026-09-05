@@ -11,6 +11,9 @@ Future<void> main() async {
   // Global captcha/login coordination (single dialog, cooldowns).
   AuthGate.instance.configure(settings.username, settings.password);
 
+  // Restore the last SEP session so cold starts usually skip the captcha.
+  await UcasClient.instance.restorePersistedSession();
+
   // Debug-only: inject an already-authenticated SEP session.
   // flutter run -d windows --dart-define=SEP_SESSION=<JSESSIONID>
   const injectedSepSession = String.fromEnvironment('SEP_SESSION');
