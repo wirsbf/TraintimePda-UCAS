@@ -58,7 +58,6 @@ dependencies:
 
   # TFLite for custom captcha model
   # tflite_flutter: ^0.12.1 # (Removed)
-  onnxruntime: ^1.4.1
   package_info_plus: ^9.0.0
   flutter_inappwebview: 6.0.0
 
@@ -89,8 +88,6 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   # To add assets to your application, add an assets section, like this:
   assets:
-    - assets/ddddocr.onnx
-    - assets/ddddocr_vocab.json
 
 
   #   - images/a_dot_ham.jpeg

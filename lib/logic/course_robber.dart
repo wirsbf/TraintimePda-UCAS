@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:html/parser.dart' as html;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-import '../data/captcha_ocr.dart';
 import '../data/ucas_client.dart';
 import '../data/settings_controller.dart';
 
@@ -422,51 +421,14 @@ class CourseRobber extends ChangeNotifier {
         }
 
         String? code;
-        
-        // Try OCR up to _maxOcrRetries times before asking for manual input
-        for (int ocrAttempt = 1; ocrAttempt <= _maxOcrRetries; ocrAttempt++) {
-          try {
-            // Use unified CaptchaOcr
-            // Course selection captcha is always 5-digit pure numbers.
-            final ocrResult = await CaptchaOcr.instance.solveCaptcha(
-              bytes, 
-              allowedChars: "0123456789"
-            );
-            
-            if (ocrResult != null && ocrResult.length >= 4) {
-              code = ocrResult;
-              _log("验证码识别成功 (尝试 $ocrAttempt): $code");
-              break;
-            } else {
-              _log("OCR尝试 $ocrAttempt/$_maxOcrRetries 失败: 识别结果无效");
-            }
-          } catch (e) {
-            _log("OCR尝试 $ocrAttempt/$_maxOcrRetries 异常: $e");
-          }
-          
-          // If not last attempt, fetch a new captcha for retry
-          if (ocrAttempt < _maxOcrRetries) {
-            await Future.delayed(const Duration(milliseconds: 300));
-            bytes = await _client.getCourseSelectionCaptcha();
-            // Decode base64 if needed
-            final bytesStrRetry = String.fromCharCodes(bytes);
-            if (bytesStrRetry.startsWith('data:image/')) {
-              final commaIdx = bytesStrRetry.indexOf(',');
-              if (commaIdx != -1) {
-                bytes = base64Decode(bytesStrRetry.substring(commaIdx + 1));
-              }
-            }
-          }
-        }
-        
-        // If OCR failed after all retries, ask for manual input
-        if (code == null) {
-          _log("OCR重试 $_maxOcrRetries 次均失败，请求手动输入...");
-          if (onManualCaptchaNeeded != null) {
-            code = await onManualCaptchaNeeded!(bytes);
-            if (code != null && code.isNotEmpty) {
-              _log("用户手动输入验证码: $code");
-            }
+
+        // OCR 已移除（模型 48MB + onnxruntime 原生库 ~32MB，为缩减包体）。
+        // 抢课验证码直接请求手动输入。
+        _log("请求手动输入验证码...");
+        if (onManualCaptchaNeeded != null) {
+          code = await onManualCaptchaNeeded!(bytes);
+          if (code != null && code.isNotEmpty) {
+            _log("用户手动输入验证码: $code");
           }
         }
 
