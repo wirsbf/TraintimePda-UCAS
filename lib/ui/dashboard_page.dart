@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../data/settings_controller.dart';
 import '../ui/widget/bouncing_button.dart';
@@ -12,6 +13,7 @@ import 'lecture_page.dart';
 import '../util/schedule_utils.dart';
 import '../data/cache_manager.dart';
 import 'lecture_detail_dialog.dart';
+import 'webview_page.dart';
 import '../data/services/update_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -38,6 +40,7 @@ class _DashboardPageState extends State<DashboardPage>
   SepProfile? _profile;
   CreditProgress? _credit;
   List<SepReminder> _reminders = [];
+  List<SepBulletin> _bulletins = [];
 
   late AnimationController _animController;
 
@@ -160,10 +163,19 @@ class _DashboardPageState extends State<DashboardPage>
       final profile = await portal.fetchProfile();
       final credit = await portal.fetchCreditProgress();
       List<SepReminder> reminders = const [];
+      List<SepBulletin> bulletins = const [];
       try {
         reminders = await portal.fetchReminders();
       } catch (_) {}
-      if (mounted) setState(() => _reminders = reminders);
+      try {
+        bulletins = await portal.fetchBulletins();
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _reminders = reminders;
+          _bulletins = bulletins;
+        });
+      }
       if (mounted) {
         setState(() {
           _profile = profile;
@@ -190,7 +202,7 @@ class _DashboardPageState extends State<DashboardPage>
       setState(() {
         _profile = SepProfile(
           name: '${p['name'] ?? ''}',
-          balance: (p['balance'] as num?)?.toInt() ?? 0,
+          balance: (p['balance'] as num?)?.toDouble() ?? 0,
           profession: '${p['profession'] ?? ''}',
           teacher: '${p['teacher'] ?? ''}',
         );
@@ -422,6 +434,10 @@ class _DashboardPageState extends State<DashboardPage>
               const SizedBox(height: 12),
               _buildAnimatedItem(3, _buildReminderBanner()),
             ],
+            if (_bulletins.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _buildAnimatedItem(4, _buildBulletinBanner()),
+            ],
             const SizedBox(height: 24),
             _buildAnimatedItem(
               3,
@@ -449,7 +465,7 @@ class _DashboardPageState extends State<DashboardPage>
               ),
             ),
             const SizedBox(height: 12),
-            _buildAnimatedItem(5, _buildLecturesList()),
+            _buildAnimatedItem(6, _buildLecturesList()),
           ],
         ),
       ),
@@ -468,10 +484,10 @@ class _DashboardPageState extends State<DashboardPage>
               icon: Icons.account_balance_wallet,
               iconColor: const Color(0xFF10B981),
               title: '校园卡',
-              main: '¥${_profile!.balance}',
-              sub: _profile!.teacher.isEmpty
-                  ? _profile!.name
-                  : '${_profile!.name} · 导师 ${_profile!.teacher}',
+              main: '¥${_profile!.balance.toStringAsFixed(2)}',
+              sub: _profile!.cardExpiry.isNotEmpty
+                  ? '有效期至 ${_profile!.cardExpiry}'
+                  : '',
             ),
           ),
         if (_profile != null && _credit != null) const SizedBox(width: 12),
@@ -482,9 +498,15 @@ class _DashboardPageState extends State<DashboardPage>
               iconColor: const Color(0xFF6366F1),
               title: '学业 · ${_credit!.category}',
               main: '${_credit!.totalObtained}/${_credit!.totalRequired} 学分',
-              sub: _credit!.enrolled.isNotEmpty && _credit!.enrolled != _credit!.totalObtained
-                  ? '在读 ${_credit!.enrolled} 学分'
-                  : (_credit!.progress >= 1 ? '已达标 🎉' : '进行中'),
+              sub: [
+                if (_profile != null && _profile!.teacher.isNotEmpty)
+                  '导师 ${_profile!.teacher}',
+                if (_credit!.enrolled.isNotEmpty &&
+                    _credit!.enrolled != _credit!.totalObtained)
+                  '在读 ${_credit!.enrolled} 学分'
+                else if (_credit!.progress >= 1)
+                  '已达标 🎉',
+              ].join(' · '),
               progress: _credit!.progress,
             ),
           ),
@@ -583,6 +605,119 @@ class _DashboardPageState extends State<DashboardPage>
         ],
       ),
     );
+  }
+
+  /// 通知公告（学生处等部门发布）
+  Widget _buildBulletinBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Row(
+              children: [
+                const Icon(Icons.campaign, size: 15, color: Color(0xFF2563EB)),
+                const SizedBox(width: 6),
+                Text('通知公告',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue[700])),
+              ],
+            ),
+          ),
+          for (final b in _bulletins.take(3))
+            InkWell(
+              onTap: () => _showBulletinDetail(b),
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(b.title,
+                          style: const TextStyle(fontSize: 13),
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                    Text(b.time,
+                        style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showBulletinDetail(SepBulletin b) async {
+    showDialog(
+      context: context,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    Map<String, dynamic>? detail;
+    try {
+      detail = await UcasClient.instance.sepPortal.fetchBulletinDetail(b.id);
+    } catch (_) {}
+    if (!mounted) return;
+    Navigator.of(context).pop(); // 关 loading
+
+    final title = '${detail?['fileName'] ?? b.title}';
+    final user = '${detail?['publishUser'] ?? b.department}';
+    final time = '${detail?['publishTime'] ?? b.time}';
+    final noticeUrl = '${detail?['noticeUrl'] ?? ''}';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title, style: const TextStyle(fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$user · $time',
+                style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+          ],
+        ),
+        actions: [
+          if (noticeUrl.isNotEmpty)
+            TextButton(
+              onPressed: () => _openNoticeOriginal(
+                  'https://sep.ucas.ac.cn$noticeUrl', title),
+              child: const Text('打开原文'),
+            ),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+        ],
+      ),
+    );
+  }
+
+  /// 打开公告原文：移动端内部 WebView（注入 SEP 会话免登录）；
+  /// 桌面端（无 WebView 实现）退回外部浏览器。
+  Future<void> _openNoticeOriginal(String url, String title) async {
+    Navigator.of(context).pop(); // 关详情对话框
+    if (Platform.isAndroid || Platform.isIOS) {
+      final cookie = await UcasClient.instance.sepPortal.currentSepCookieValue();
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => WebViewPage(
+          url: url,
+          title: title,
+          settings: widget.settings,
+          cookies: cookie.isEmpty ? null : {'JSESSIONID': cookie},
+        ),
+      ));
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Widget _buildSectionHeader(String title, {bool isRealtime = false, bool isLoading = false}) {
@@ -1043,14 +1178,22 @@ class _DashboardPageState extends State<DashboardPage>
           .animate(
             CurvedAnimation(
               parent: _animController,
-              curve: Interval(index * 0.2, 1.0, curve: Curves.easeOutQuad),
+              curve: Interval(
+                (index * 0.15).clamp(0.0, 0.85),
+                1.0,
+                curve: Curves.easeOutQuad,
+              ),
             ),
           ),
       child: FadeTransition(
         opacity: Tween<double>(begin: 0, end: 1).animate(
           CurvedAnimation(
             parent: _animController,
-            curve: Interval(index * 0.2, 1.0, curve: Curves.easeOutQuad),
+            curve: Interval(
+              (index * 0.15).clamp(0.0, 0.85),
+              1.0,
+              curve: Curves.easeOutQuad,
+            ),
           ),
         ),
         child: child,

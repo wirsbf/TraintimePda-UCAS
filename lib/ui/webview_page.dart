@@ -11,11 +11,16 @@ class WebViewPage extends StatefulWidget {
     required this.url,
     required this.title,
     this.settings,
+    this.cookies,
   });
 
   final String url;
   final String title;
   final SettingsController? settings;
+
+  /// 注入到 WebView CookieStore 的 Cookie（如 SEP JSESSIONID），
+  /// 用于免登录打开需要会话的页面。
+  final Map<String, String>? cookies;
 
   @override
   State<WebViewPage> createState() => _WebViewPageState();
@@ -154,8 +159,25 @@ class _WebViewPageState extends State<WebViewPage> {
       _log('🔧 WebView debugging: enabled');
     }
 
+    _injectCookies();
     _log('Loading request...');
     _controller.loadRequest(Uri.parse(widget.url));
+  }
+
+  Future<void> _injectCookies() async {
+    final cookies = widget.cookies;
+    if (cookies == null || cookies.isEmpty) return;
+    try {
+      final manager = WebViewCookieManager();
+      final host = Uri.parse(widget.url).host;
+      for (final e in cookies.entries) {
+        await manager.setCookie(WebViewCookie(
+          name: e.key, value: e.value, domain: host, path: '/'));
+        _log('🍪 injected cookie ${e.key} for $host');
+      }
+    } catch (e) {
+      _log('cookie inject failed: $e');
+    }
   }
 
   void _retry() {

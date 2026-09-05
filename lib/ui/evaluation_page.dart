@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/ucas_client.dart';
+import 'webview_page.dart';
 import '../model/sep_portal.dart';
 
 /// 课程/教师评估页（数据来自 xkcts 选课系统）
@@ -161,6 +163,21 @@ class _EvaluationPageState extends State<EvaluationPage> {
   Future<void> _launch(String pathOrUrl) async {
     if (pathOrUrl.isEmpty) return;
     final url = UcasClient.instance.sepPortal.resolveActionUrl(pathOrUrl);
+
+    // 移动端：内部 WebView（注入会话 Cookie 免登录）
+    if (Platform.isAndroid || Platform.isIOS) {
+      final cookie = await UcasClient.instance.sepPortal.currentSepCookieValue();
+      if (!mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => WebViewPage(
+          url: url,
+          title: '教学评估',
+          cookies: cookie.isEmpty ? null : {'JSESSIONID': cookie},
+        ),
+      ));
+      return;
+    }
+
     final uri = Uri.tryParse(url);
     if (uri != null && await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);

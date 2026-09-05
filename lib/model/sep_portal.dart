@@ -20,7 +20,8 @@ class SepProfile {
     final card = (d['oneCard'] as Map<String, dynamic>?) ?? const {};
     return SepProfile(
       name: (d['name'] as String?) ?? '',
-      balance: int.tryParse('${card['balance'] ?? 0}') ?? 0,
+      // 接口返回单位是分
+      balance: ((num.tryParse('${card['balance'] ?? 0}') ?? 0) / 100),
       cardNo: '${card['cardno'] ?? ''}',
       cardExpiry: '${card['effectdate'] ?? ''}'.split(' ').first,
       profession: '${d['professionName'] ?? ''}',
@@ -33,7 +34,7 @@ class SepProfile {
   }
 
   final String name;
-  final int balance; // 一卡通余额（元）
+  final double balance; // 一卡通余额（元，接口返回分已换算）
   final String cardNo;
   final String cardExpiry;
   final String profession;
@@ -175,6 +176,30 @@ class SepReminder {
   final String time;
   final String link;
   final bool read;
+}
+
+/// 通知公告 (/sepCardData/data/sep_bulletin)
+class SepBulletin {
+  const SepBulletin({
+    required this.id,
+    required this.title,
+    required this.time,
+    this.department = '',
+  });
+
+  factory SepBulletin.fromJson(Map<String, dynamic> json) {
+    return SepBulletin(
+      id: json['id'] ?? '',
+      title: '${json['title'] ?? ''}',
+      time: '${json['publishTime'] ?? json['createTime'] ?? ''}'.split(' ').first,
+      department: '${json['typeName'] ?? ''}',
+    );
+  }
+
+  final dynamic id;
+  final String title;
+  final String time;
+  final String department;
 }
 
 /// 评教课程（xkcts /evaluate/course/{termId}）

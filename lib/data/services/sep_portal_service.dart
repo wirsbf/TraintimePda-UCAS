@@ -70,6 +70,28 @@ class SepPortalService {
         .toList();
   }
 
+  /// 通知公告（学生处等部门发布）
+  Future<List<SepBulletin>> fetchBulletins({int limit = 20}) async {
+    final json = await _getJson('/sepCardData/data/sep_bulletin');
+    final list = (json['data'] as List<dynamic>? ?? const []);
+    return list
+        .map((e) => SepBulletin.fromJson((e as Map).cast<String, dynamic>()))
+        .take(limit)
+        .toList();
+  }
+
+  /// 当前 SEP JSESSIONID 值（供 WebView 注入）
+  Future<String> currentSepCookieValue() async {
+    final cookie = await _sepAuth.currentSepCookie();
+    return cookie.replaceFirst('JSESSIONID=', '');
+  }
+
+  /// 公告详情（/noticeDetailJson）：标题/发布人/日期/原文链接
+  Future<Map<String, dynamic>> fetchBulletinDetail(dynamic id) async {
+    final json = await _getJson('/noticeDetailJson?id=$id');
+    return (json['data'] as Map<String, dynamic>?) ?? const {};
+  }
+
   // ==================== 评教（xkcts，需子系统会话） ====================
 
   String? _xkctsBase;
