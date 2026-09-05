@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'course_reviews_page.dart';
+import 'evaluation_page.dart';
 import 'score_page.dart';
 import 'exam_page.dart';
 import 'widget/swipe_back_route.dart';
@@ -89,6 +90,19 @@ class FunctionPage extends StatelessWidget {
               Navigator.of(
                 context,
               ).push(SwipeBackPageRoute(page: const CourseReviewsPage()));
+            },
+          ),
+          const SizedBox(height: 12),
+          _FunctionTile(
+            icon: Icons.fact_check,
+            title: '教学评估',
+            subtitle: '课程评估与教师评估状态',
+            color: Colors.teal.shade100,
+            iconColor: Colors.teal,
+            onTap: () {
+              Navigator.of(
+                context,
+              ).push(SwipeBackPageRoute(page: const EvaluationPage()));
             },
           ),
           const SizedBox(height: 12),

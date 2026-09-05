@@ -16,6 +16,7 @@ import 'services/score_service.dart';
 import 'services/exam_service.dart';
 import 'services/lecture_service.dart';
 import 'services/course_selection_service.dart';
+import 'services/sep_portal_service.dart';
 
 import '../model/schedule.dart';
 import '../model/score.dart';
@@ -111,6 +112,7 @@ class UcasClient {
     _examService = ExamService(dio: _dio, jwxkAuth: _jwxkAuth);
     _lectureService = LectureService(dio: _dio, jwxkAuth: _jwxkAuth);
     _courseSelectionService = CourseSelectionService(dio: _dio, xkgoAuth: _xkgoAuth);
+    _sepPortalService = SepPortalService(dio: _dio, sepAuth: _sepAuth);
   }
 
   // Singleton instance
@@ -129,6 +131,7 @@ class UcasClient {
   late final ExamService _examService;
   late final LectureService _lectureService;
   late final CourseSelectionService _courseSelectionService;
+  late final SepPortalService _sepPortalService;
 
   String? _lastUsername;
   String? _lastPassword;
@@ -312,6 +315,9 @@ class UcasClient {
       action: () => _courseSelectionService.saveCourse(sids, vcode),
     );
   }
+
+  /// SEP 门户卡片数据（一卡通/学分/GPA/提醒/评教）
+  SepPortalService get sepPortal => _sepPortalService;
 
   /// Fetch XKGO main page (exposed for debugging/parsing)
   Future<String> fetchXkgoMain() async {

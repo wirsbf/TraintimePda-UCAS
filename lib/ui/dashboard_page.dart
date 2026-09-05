@@ -6,6 +6,7 @@ import '../data/auth_gate.dart';
 import '../model/schedule.dart';
 import '../model/lecture.dart';
 import '../model/exam.dart';
+import '../model/sep_portal.dart';
 import 'schedule_page.dart';
 import 'lecture_page.dart';
 import '../util/schedule_utils.dart';
@@ -34,6 +35,9 @@ class _DashboardPageState extends State<DashboardPage>
   List<Exam>? _exams;
   List<Course> _customCourses = [];
   String? _error;
+  SepProfile? _profile;
+  CreditProgress? _credit;
+  List<SepReminder> _reminders = [];
 
   late AnimationController _animController;
 
@@ -146,6 +150,58 @@ class _DashboardPageState extends State<DashboardPage>
         _customCourses = cachedCustom;
       });
     }
+    _restorePortalCache();
+  }
+
+  /// SEP 门户卡片（一卡通 + 学分进度）。失败静默——卡片不显示而已。
+  Future<void> _fetchPortalCards() async {
+    try {
+      final portal = UcasClient.instance.sepPortal;
+      final profile = await portal.fetchProfile();
+      final credit = await portal.fetchCreditProgress();
+      List<SepReminder> reminders = const [];
+      try {
+        reminders = await portal.fetchReminders();
+      } catch (_) {}
+      if (mounted) setState(() => _reminders = reminders);
+      if (mounted) {
+        setState(() {
+          _profile = profile;
+          _credit = credit;
+        });
+      }
+      CacheManager().savePortalData({
+        'profile': {'name': profile.name, 'balance': profile.balance,
+          'profession': profile.profession, 'teacher': profile.teacher},
+        'credit': {'xslb': credit.category, 'req': credit.totalRequired,
+          'got': credit.totalObtained, 'enrolled': credit.enrolled},
+      });
+    } catch (e) {
+      debugPrint('Portal cards fetch failed: $e');
+    }
+  }
+
+  void _restorePortalCache() {
+    final cached = CacheManager().getPortalData();
+    if (cached == null) return;
+    final p = cached['profile'];
+    final c = cached['credit'];
+    if (p is Map<String, dynamic> && c is Map<String, dynamic>) {
+      setState(() {
+        _profile = SepProfile(
+          name: '${p['name'] ?? ''}',
+          balance: (p['balance'] as num?)?.toInt() ?? 0,
+          profession: '${p['profession'] ?? ''}',
+          teacher: '${p['teacher'] ?? ''}',
+        );
+        _credit = CreditProgress(
+          category: '${c['xslb'] ?? ''}',
+          totalRequired: '${c['req'] ?? ''}',
+          totalObtained: '${c['got'] ?? ''}',
+          enrolled: '${c['enrolled'] ?? ''}',
+        );
+      });
+    }
   }
 
   Future<void> _fetchData({bool force = false}) async {
@@ -177,6 +233,7 @@ class _DashboardPageState extends State<DashboardPage>
       _fetchSchedule(),
       _fetchExams(),
       _fetchLectures(),
+      _fetchPortalCards(),
     ]);
 
     // Refresh custom courses from cache (in case they changed elsewhere)
@@ -359,9 +416,15 @@ class _DashboardPageState extends State<DashboardPage>
                 child: _buildTodayCourses(),
               ),
             ),
+            const SizedBox(height: 12),
+            _buildAnimatedItem(2, _buildPortalCards()),
+            if (_reminders.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _buildAnimatedItem(3, _buildReminderBanner()),
+            ],
             const SizedBox(height: 24),
             _buildAnimatedItem(
-              2,
+              3,
               BouncingButton(
                 // Make entire header clickable
                 onTap: () {
@@ -386,9 +449,138 @@ class _DashboardPageState extends State<DashboardPage>
               ),
             ),
             const SizedBox(height: 12),
-            _buildAnimatedItem(3, _buildLecturesList()),
+            _buildAnimatedItem(5, _buildLecturesList()),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 校园卡 + 学业进度（SEP 门户数据）
+  Widget _buildPortalCards() {
+    if (_profile == null && _credit == null) return const SizedBox.shrink();
+
+    return Row(
+      children: [
+        if (_profile != null)
+          Expanded(
+            child: _portalCard(
+              icon: Icons.account_balance_wallet,
+              iconColor: const Color(0xFF10B981),
+              title: '校园卡',
+              main: '¥${_profile!.balance}',
+              sub: _profile!.teacher.isEmpty
+                  ? _profile!.name
+                  : '${_profile!.name} · 导师 ${_profile!.teacher}',
+            ),
+          ),
+        if (_profile != null && _credit != null) const SizedBox(width: 12),
+        if (_credit != null)
+          Expanded(
+            child: _portalCard(
+              icon: Icons.school,
+              iconColor: const Color(0xFF6366F1),
+              title: '学业 · ${_credit!.category}',
+              main: '${_credit!.totalObtained}/${_credit!.totalRequired} 学分',
+              sub: _credit!.enrolled.isNotEmpty && _credit!.enrolled != _credit!.totalObtained
+                  ? '在读 ${_credit!.enrolled} 学分'
+                  : (_credit!.progress >= 1 ? '已达标 🎉' : '进行中'),
+              progress: _credit!.progress,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _portalCard({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String main,
+    required String sub,
+    double? progress,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: iconColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(title,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(main,
+              style: const TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          if (progress != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                backgroundColor: Colors.grey[200],
+                color: iconColor,
+              ),
+            ),
+          if (progress != null) const SizedBox(height: 4),
+          Text(sub, style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              overflow: TextOverflow.ellipsis),
+        ],
+      ),
+    );
+  }
+
+  /// 作业督促通知等提醒横幅（SEP reminderPage）
+  Widget _buildReminderBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFED7AA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final r in _reminders.take(3))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                children: [
+                  const Icon(Icons.notifications_active,
+                      size: 16, color: Color(0xFFEA580C)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(r.title,
+                        style: const TextStyle(fontSize: 13),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                  Text(r.time.split(' ').first,
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

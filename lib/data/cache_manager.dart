@@ -111,6 +111,25 @@ class CacheManager {
     }
   }
 
+  // SEP portal cards (profile / credit / summary)
+  Future<void> savePortalData(Map<String, dynamic> data) async {
+    if (_prefs == null) await init();
+    try {
+      await _prefs!.setString('cache_portal', jsonEncode(data));
+    } catch (_) {}
+  }
+
+  Map<String, dynamic>? getPortalData() {
+    if (_prefs == null) return null;
+    final jsonStr = _prefs!.getString('cache_portal');
+    if (jsonStr == null) return null;
+    try {
+      return jsonDecode(jsonStr) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // Timestamp
   Future<void> saveLastUpdateTime() async {
     if (_prefs == null) await init();

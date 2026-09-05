@@ -41,6 +41,17 @@ class SepAuthenticationService implements AuthenticationService {
     _lastKnownGoodSession = null;
   }
 
+  /// Current SEP JSESSIONID from the cookie jar (empty when absent),
+  /// for cross-subsystem requests that must carry the SEP cookie manually.
+  Future<String> currentSepCookie() async {
+    final jar = _cookieJar;
+    if (jar == null) return '';
+    final cookies = await jar.loadForRequest(Uri.parse(baseUrl));
+    final sid = cookies.where((c) => c.name == 'JSESSIONID').firstOrNull?.value;
+    final good = _lastKnownGoodSession;
+    return 'JSESSIONID=${sid ?? good ?? ''}';
+  }
+
   /// Remember a session ID as authenticated. Called by the request
   /// interceptor with the cookie a request ACTUALLY CARRIED when the
   /// server confirmed it (e.g. a 200 from the validation page) — never
