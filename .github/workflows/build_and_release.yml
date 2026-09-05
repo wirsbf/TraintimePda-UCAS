@@ -133,7 +133,8 @@ jobs:
             echo "$RELEASE_KEYSTORE_BASE64" | tr -d '\n\r ' | base64 -d > android/app/release.jks
           fi
       
-      - run: flutter build apk --release
+      # 仅构建 arm64（现代安卓手机全覆盖），产物仍为 app-release.apk
+      - run: flutter build apk --release --target-platform android-arm64
       
       - uses: actions/upload-artifact@v4
         with:
