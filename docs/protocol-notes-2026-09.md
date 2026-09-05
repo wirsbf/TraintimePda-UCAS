@@ -134,3 +134,36 @@ SEP 登录
 - Chrome 启动：`"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:/Users/wirs/chrome-cdp-profile" --no-first-run`
 - Node REPL 内：`createWS()`（node:net 手写 WebSocket）→ CDP `Network.enable` + `Page.navigate`，重定向链合并保留原始 POST 数据，XHR/Fetch/Document 响应体自动抓取
 - 辅助函数：`capList(filter)` 列请求、`capDetail(i)` 看详情、`cdp(method, params)` 发任意 CDP 命令
+
+---
+
+## 五、SEP 门户 Card API 数据评估（2026-09-05 实测，GET + JSESSIONID + XHR 头）
+
+### 🥇 高价值
+
+**`GET /sepCardData/data/sep_info`** — 一卡通 + 学籍档案（一次请求全拿）
+```json
+{"oneCard":{"balance":247,"cardno":"学号","effectdate":"2028-07-31","accstatus":"1"},
+ "name":"姓名","professionName":"专业","teacher":"导师","pydwName":"培养单位",
+ "schoolLength":"3","schoolDate":"2025年09月","objectType":"yjs"}
+```
+→ App「个人中心」卡片：一卡通余额、导师、专业、学制、入学时间
+
+**`GET /sepCardData/dataScore`** — 培养方案学分进度
+```json
+{"xslb":"学术型硕士",
+ "ggxxk":{"yq":">=2学分","yxxf":"2.0","status":true},      // 公共选修课
+ "zyxwk":{"yq":">=12学分","yxxf":"16.0","status":true},     // 专业学位课
+ "zxfyq":{"yq":">=30学分","yxxf":"30.0","yqxf":"32.0","status":true}, // 总学分
+ "ggbxkyq":["硕士学位英语（3.0学分）",...]}                   // 公共必修课要求
+```
+→ App「学分进度」卡片：进度条可视化，毕业要求完成度一目了然
+
+### 🥈 中价值
+- `GET /sepCardData/data/sep_bulletin` — 通知公告列表（标题/日期/部门）
+- `GET /sepCardData/headData` — 姓名/研究所/学号/邮箱
+- `GET /sepCardData/summaryCounts` — {important, pending, notice} 待办角标
+
+### 🥉 低价值/当前为空
+- `sep_notice`（个性化通知，空）、`sep_calendar`（空）、`getCalendarList?year=&month=`（9月空）
+- `sep_link`（用户自定义链接）、`getTaskTip`（HTML 片段）
