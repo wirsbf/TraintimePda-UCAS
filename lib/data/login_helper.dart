@@ -11,7 +11,10 @@ class LoginHelper {
 
   final UcasClient _client;
 
-  LoginHelper({UcasClient? client}) : _client = client ?? UcasClient();
+  /// IMPORTANT: always default to the app-wide singleton. Creating a fresh
+  /// [UcasClient] here used to log in inside a throwaway CookieJar, so the
+  /// session never reached the pages' client and everything re-authed.
+  LoginHelper({UcasClient? client}) : _client = client ?? UcasClient.instance;
 
   /// Attempts to login, asking the user to type the captcha when required.
   ///

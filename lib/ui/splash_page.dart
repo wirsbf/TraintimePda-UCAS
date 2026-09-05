@@ -26,6 +26,10 @@ class _SplashPageState extends State<SplashPage> {
   }
 
   Future<void> _startApp() async {
+    // Wait for the first frame: navigation and dialogs (AuthGate captcha)
+    // must not race the initial route assembly.
+    await WidgetsBinding.instance.endOfFrame;
+
     // 1. Check Login
     if (widget.settings.username.isEmpty) {
       if (mounted) {

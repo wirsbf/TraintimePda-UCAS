@@ -29,6 +29,30 @@ class SepAuthenticationService implements AuthenticationService {
   /// SEP requests to defeat that churn.
   String? _lastKnownGoodSession;
 
+  /// Session ID known to be authenticated. The request interceptor in
+  /// [UcasClient] force-attaches it to every SEP request at send time so
+  /// that late Set-Cookie responses from concurrent requests cannot
+  /// silently deauthenticate the client.
+  String? get knownGoodSession => _lastKnownGoodSession;
+
+  /// Mark the known-good session as dead (called when a SEP request that
+  /// carried it still bounced to the login page).
+  void invalidateKnownGoodSession() {
+    _lastKnownGoodSession = null;
+  }
+
+  /// Remember a session ID as authenticated. Called by the request
+  /// interceptor with the cookie a request ACTUALLY CARRIED when the
+  /// server confirmed it (e.g. a 200 from the validation page) — never
+  /// read from the jar after the fact, because a late Set-Cookie response
+  /// may already have churned it.
+  void markKnownGoodSession(String sessionId) {
+    if (sessionId.isNotEmpty) {
+      _lastKnownGoodSession = sessionId;
+      debugPrint('[SEP] known-good session marked at send-time');
+    }
+  }
+
   @override
   SessionType get type => SessionType.sep;
 
@@ -127,6 +151,7 @@ class SepAuthenticationService implements AuthenticationService {
         final sc2 = response.headers.map['set-cookie']?.join(' | ') ?? '-';
         debugPrint('[SEP] validateSession: ${response.statusCode} -> $location, set-cookie=$sc2');
         if (location.contains('loginFrom') || location.contains('slogin')) {
+          invalidateKnownGoodSession();
           return false;
         }
         // Redirect into a subsystem SSO flow = still logged in.

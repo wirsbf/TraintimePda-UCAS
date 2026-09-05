@@ -97,11 +97,22 @@ class AuthGate {
   }
 
   Future<String?> _showDialog(Uint8List image) async {
-    final ctx = navigatorKey.currentContext;
-    if (ctx == null) {
-      debugPrint('[AuthGate] no navigator context, cannot show dialog');
-      return null;
+    // The navigator can be locked during startup route assembly (splash
+    // mounting, page transitions). Retrying until it is idle avoids the
+    // "!navigator._debugLocked" assertion crash.
+    for (var attempt = 0; attempt < 20; attempt++) {
+      final ctx = navigatorKey.currentContext;
+      if (ctx != null) {
+        try {
+          await WidgetsBinding.instance.endOfFrame;
+          return await showCaptchaDialog(ctx, image);
+        } on FlutterError catch (e) {
+          debugPrint('[AuthGate] navigator busy, retrying: $e');
+        }
+      }
+      await Future.delayed(const Duration(milliseconds: 100));
     }
-    return showCaptchaDialog(ctx, image);
+    debugPrint('[AuthGate] could not show captcha dialog (navigator busy)');
+    return null;
   }
 }

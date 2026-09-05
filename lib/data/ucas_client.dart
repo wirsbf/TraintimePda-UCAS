@@ -59,13 +59,39 @@ class UcasClient {
         _sessionManager = SessionManager() {
     if (dio == null) {
       _dio.interceptors.add(CookieManager(_cookieJar));
-      // Temporary diagnostic: log cookies sent to SEP
+      // SEP session guard + diagnostics. Runs AFTER the CookieManager, i.e.
+      // at the actual send moment: if a known-good authenticated session
+      // exists but the jar was churned by a late Set-Cookie response, the
+      // Cookie header is rewritten to carry the good session. This closes
+      // the microsecond race between pre-request checks and the send.
       _dio.interceptors.add(InterceptorsWrapper(
         onRequest: (options, handler) {
           if (options.uri.host.contains('sep.ucas.ac.cn')) {
-            debugPrint('[COOKIE] ${options.uri.path} <= ${options.headers['Cookie'] ?? '(none)'}');
+            final good = _sepAuth.knownGoodSession;
+            final current = options.headers['Cookie'] as String? ?? '';
+            debugPrint('[COOKIE] ${options.uri.path} <= ${current.isEmpty ? '(none)' : current}');
+            if (good != null && !current.contains(good)) {
+              options.headers['Cookie'] = 'JSESSIONID=$good';
+              debugPrint('[COOKIE] guard rewrote header to known-good session');
+            }
+            // Remember what this request actually carries, so onResponse
+            // can promote it to "known-good" when the server confirms it.
+            options.extra['sentCookie'] = options.headers['Cookie'] as String? ?? '';
           }
           return handler.next(options);
+        },
+        onResponse: (response, handler) {
+          final path = response.requestOptions.uri.path;
+          final ok = response.statusCode == 200;
+          if (ok && (path == '/portal/site/226/821' || path == '/slogin')) {
+            final sent = response.requestOptions.extra['sentCookie'] as String? ?? '';
+            final sid = RegExp(r'JSESSIONID=([A-Za-z0-9]+)')
+                    .firstMatch(sent)
+                    ?.group(1) ??
+                '';
+            _sepAuth.markKnownGoodSession(sid);
+          }
+          return handler.next(response);
         },
       ));
       _configureHttpClient();

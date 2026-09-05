@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
-import '../services/ocr_service.dart';
+// dart:ffi-based ONNX OCR is native-only; web gets a failing stub.
+import '../services/ocr_service_stub.dart'
+    if (dart.library.io) '../services/ocr_service.dart';
 
 /// Unified captcha OCR service that selects implementation based on platform.
 /// - Desktop (Windows, Linux, macOS): Uses Rust OCR (ddddocr)
