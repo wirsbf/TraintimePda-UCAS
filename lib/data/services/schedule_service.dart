@@ -204,7 +204,12 @@ class ScheduleService {
     final entries = _parseScheduleTable(scheduleHtml);
 
     if (entries.isEmpty) {
-      throw Exception('No course data parsed from schedule');
+      // An empty grid is a valid state (e.g. no courses selected yet this
+      // term). Only a missing table means the page was not the schedule.
+      if (!scheduleHtml.contains('<table')) {
+        throw Exception('No course data parsed from schedule');
+      }
+      return Schedule(courses: const []);
     }
 
     final details = await _fetchCourseDetails(entries);
