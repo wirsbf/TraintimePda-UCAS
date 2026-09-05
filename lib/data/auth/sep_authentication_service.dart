@@ -75,14 +75,18 @@ class SepAuthenticationService implements AuthenticationService {
         ),
       );
 
-      // Redirect to login means session invalid
-      // (SEP migrated some redirects from 302 to 303, accept both)
+      // Redirect handling (SEP migrated some redirects from 302 to 303).
+      // CRITICAL: once a subsystem (jwxk/xkgo) login has happened, the
+      // portal remembers the active role and REDIRECTS this page into the
+      // subsystem SSO even though the SEP session is perfectly VALID.
+      // Only a redirect back to the login page means the session is dead.
       if (response.statusCode == 302 || response.statusCode == 303) {
         final location = response.headers.value('location') ?? '';
         if (location.contains('loginFrom') || location.contains('slogin')) {
           return false;
         }
-        return false;
+        // Redirect into a subsystem SSO flow = still logged in.
+        return true;
       }
 
       // Login page content means session invalid

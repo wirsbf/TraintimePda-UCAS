@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'data/auth_gate.dart';
 import 'data/settings_controller.dart';
 import 'data/ucas_client.dart';
 import 'ui/splash_page.dart';
@@ -6,6 +7,9 @@ import 'ui/splash_page.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final settings = await SettingsController.load();
+
+  // Global captcha/login coordination (single dialog, cooldowns).
+  AuthGate.instance.configure(settings.username, settings.password);
 
   // Debug-only: inject an already-authenticated SEP session.
   // flutter run -d windows --dart-define=SEP_SESSION=<JSESSIONID>
@@ -26,6 +30,7 @@ class UcasScheduleApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: AuthGate.instance.navigatorKey,
       title: 'UCAS 课程表',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(

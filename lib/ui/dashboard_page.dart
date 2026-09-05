@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import '../data/settings_controller.dart';
 import '../ui/widget/bouncing_button.dart';
 import '../data/ucas_client.dart';
-import '../data/login_helper.dart';
+import '../data/auth_gate.dart';
 import '../model/schedule.dart';
 import '../model/lecture.dart';
 import '../model/exam.dart';
 import 'schedule_page.dart';
 import 'lecture_page.dart';
 import '../util/schedule_utils.dart';
-import 'captcha_dialog.dart';
 import '../data/cache_manager.dart';
 import 'lecture_detail_dialog.dart';
 import '../data/services/update_service.dart';
@@ -104,8 +103,21 @@ class _DashboardPageState extends State<DashboardPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _fetchData();
+      // Throttled: window switches happen constantly; a full refetch
+      // (and with it possible captcha prompts) at most every 5 minutes.
+      _fetchDataThrottled();
     }
+  }
+
+  DateTime _lastAutoFetchAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  Future<void> _fetchDataThrottled() async {
+    if (DateTime.now().difference(_lastAutoFetchAt) <
+        const Duration(minutes: 5)) {
+      return;
+    }
+    _lastAutoFetchAt = DateTime.now();
+    await _fetchData();
   }
 
   @override
@@ -137,34 +149,17 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Future<void> _fetchData({bool force = false}) async {
-    // 1. Login (manual captcha input when required)
-    try {
-      final captchaImage = await LoginHelper().loginWithManualCaptcha(
-        widget.settings.username,
-        widget.settings.password,
-        onManualCaptchaNeeded: mounted ? (image) => showCaptchaDialog(context, image) : null,
-      );
-      
-      if (captchaImage != null) {
-        // Manual input was cancelled
-        debugPrint('Login cancelled by user');
-        if (mounted) {
-           setState(() {
-             _loadingSchedule = false;
-             _loadingLectures = false;
-           });
-        }
-        return;
-      }
-    } catch (e) {
-      debugPrint('Login failed: $e');
+    // 1. Login via the global gate (single dialog + cooldowns).
+    final loggedIn = await AuthGate.instance.ensureLoggedIn();
+    if (!loggedIn) {
+      debugPrint('[Dashboard] login unavailable (cancelled/cooldown); using cache');
       if (mounted) {
-          setState(() {
-            _loadingSchedule = false;
-            _loadingLectures = false;
-          });
+        setState(() {
+          _loadingSchedule = false;
+          _loadingLectures = false;
+        });
       }
-      return; // Stop if login definitely failed
+      return;
     }
 
     // 2. Check Cache
@@ -231,7 +226,7 @@ class _DashboardPageState extends State<DashboardPage>
     await _fetchData(force: true);
   }
 
-  Future<void> _fetchSchedule({String? captchaCode}) async {
+  Future<void> _fetchSchedule() async {
     setState(() => _loadingSchedule = true);
     try {
       // Fetch schedule using cached session (auto-retry if session expired)
@@ -243,14 +238,19 @@ class _DashboardPageState extends State<DashboardPage>
         });
         CacheManager().saveSchedule(schedule);
       }
-    } on CaptchaRequiredException catch (e) {
-      if (mounted) {
-        final code = await showCaptchaDialog(context, e.image);
-        if (code != null) {
-          if (mounted) setState(() => _loadingSchedule = false);
-          await _fetchSchedule(captchaCode: code);
-          return;
-        }
+    } on CaptchaRequiredException {
+      // One coordinated captcha via the global gate; retry once on success.
+      if (await AuthGate.instance.ensureLoggedIn()) {
+        try {
+          final schedule = await UcasClient.instance.fetchSchedule();
+          if (mounted) {
+            setState(() {
+              _schedule = schedule;
+              _isScheduleRealtime = true;
+            });
+            CacheManager().saveSchedule(schedule);
+          }
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint('Schedule Fetch Error: $e - Loading from cache');
@@ -264,7 +264,7 @@ class _DashboardPageState extends State<DashboardPage>
     }
   }
 
-  Future<void> _fetchLectures({String? captchaCode}) async {
+  Future<void> _fetchLectures() async {
     setState(() => _loadingLectures = true);
     try {
       // Fetch lectures using cached session (auto-retry if session expired)
@@ -294,14 +294,12 @@ class _DashboardPageState extends State<DashboardPage>
           CacheManager().saveLectures(lectures);
         }
       }
-    } on CaptchaRequiredException catch (e) {
-      if (mounted) {
-        final code = await showCaptchaDialog(context, e.image);
-        if (code != null) {
-          if (mounted) setState(() => _loadingLectures = false);
-          await _fetchLectures(captchaCode: code);
-          return;
-        }
+    } on CaptchaRequiredException {
+      // One coordinated captcha via the global gate; retry once on success.
+      if (await AuthGate.instance.ensureLoggedIn()) {
+        try {
+          await UcasClient.instance.fetchLectures();
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint('Lecture Fetch Error: $e - Loading from cache');

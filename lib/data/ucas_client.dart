@@ -331,7 +331,23 @@ class UcasClient {
     }
   }
 
-  /// Authenticate with retry logic (single-flight per service)
+  /// Global auth serialization: the SEP portal only tolerates ONE active
+  /// subsystem Identity flow at a time (concurrent flows invalidate each
+  /// other server-side, cascading into captcha prompts). All
+  /// authentications therefore run strictly one after another.
+  Future<void>? _authChain;
+
+  Future<T> _serializeAuth<T>(Future<T> Function() op) {
+    final next = _authChain == null
+        ? op()
+        : _authChain!.then((_) => op(), onError: (_) => op());
+    // Keep the chain alive regardless of individual failures.
+    _authChain = next.then<void>((_) {}, onError: (_) {});
+    return next;
+  }
+
+  /// Authenticate with retry logic (serialized globally, single-flight per
+  /// service)
   Future<void> _authenticateWithRetry(
     AuthenticationService service,
     Credentials credentials, {
@@ -343,9 +359,11 @@ class UcasClient {
       return existing;
     }
 
-    final flight = _authenticateWithRetryLocked(service, credentials,
-            maxRetries: maxRetries)
-        .whenComplete(() {
+    final flight = _serializeAuth(() => _authenticateWithRetryLocked(
+          service,
+          credentials,
+          maxRetries: maxRetries,
+        )).whenComplete(() {
       _authFlights.remove(service);
     });
     _authFlights[service] = flight;

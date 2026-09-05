@@ -1,6 +1,6 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../data/settings_controller.dart';
+import '../data/auth_gate.dart';
 import '../data/ucas_client.dart';
 import '../model/lecture.dart';
 import 'lecture_detail_dialog.dart';
@@ -79,7 +79,7 @@ class _LecturePageState extends State<LecturePage> {
     });
   }
 
-  Future<void> _fetchLectures({String? captchaCode}) async {
+  Future<void> _fetchLectures() async {
     setState(() {
       _loading = true;
       _error = null;
@@ -113,20 +113,23 @@ class _LecturePageState extends State<LecturePage> {
           _lectures = filtered;
         });
       }
-    } on CaptchaRequiredException catch (e) {
-      if (mounted) {
-        final code = await _showCaptchaDialog(context, e.image);
-        if (code != null) {
-          if (mounted) setState(() => _loading = false);
-          await _fetchLectures(captchaCode: code);
-          return;
-        } else {
-          if (mounted) {
-            setState(() {
-              _error = '验证码已取消';
-            });
-          }
-        }
+    } on CaptchaRequiredException {
+      // One coordinated captcha via the global gate; retry once.
+      if (await AuthGate.instance.ensureLoggedIn()) {
+        try {
+          final lectures = await UcasClient.instance.fetchLectures();
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+          final filtered = lectures.where((l) {
+            if (l.date.isEmpty) return true;
+            final d = DateTime.tryParse(l.date);
+            return d == null || !DateTime(d.year, d.month, d.day).isBefore(today);
+          }).toList();
+          _sortLectures(filtered);
+          if (mounted) setState(() => _lectures = filtered);
+        } catch (_) {}
+      } else if (mounted) {
+        setState(() { _error = '验证码已取消'; });
       }
     } catch (e) {
       if (mounted) {
@@ -303,39 +306,3 @@ class _LectureCard extends StatelessWidget {
   }
 }
 
-Future<String?> _showCaptchaDialog(BuildContext context, Uint8List image) {
-  final codeController = TextEditingController();
-  return showDialog<String>(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => AlertDialog(
-      title: const Text('请输入验证码'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Image.memory(image, height: 60, fit: BoxFit.contain),
-          const SizedBox(height: 12),
-          TextField(
-            controller: codeController,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '验证码',
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (v) => Navigator.pop(context, v.trim()),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, codeController.text.trim()),
-          child: const Text('确定'),
-        ),
-      ],
-    ),
-  );
-}

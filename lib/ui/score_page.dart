@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import '../data/settings_controller.dart';
 import '../data/ucas_client.dart';
 import '../model/score.dart';
-import 'captcha_dialog.dart';
+import '../data/auth_gate.dart';
 import '../data/cache_manager.dart';
 
 class ScorePage extends StatefulWidget {
@@ -31,7 +30,7 @@ class _ScorePageState extends State<ScorePage> {
     }
   }
 
-  Future<void> _fetchScores({String? captchaCode}) async {
+  Future<void> _fetchScores() async {
     setState(() {
       _loading = true;
       _error = null;
@@ -44,20 +43,16 @@ class _ScorePageState extends State<ScorePage> {
         _scores = scores;
       });
       await CacheManager().saveScores(scores);
-    } on CaptchaRequiredException catch (e) {
-      if (mounted) {
-        final code = await showCaptchaDialog(context, e.image);
-        if (code != null) {
-          if (mounted) setState(() => _loading = false);
-          await _fetchScores(captchaCode: code);
-          return;
-        } else {
-          if (mounted) {
-            setState(() {
-              _error = '验证码已取消';
-            });
-          }
-        }
+    } on CaptchaRequiredException {
+      // One coordinated captcha via the global gate; retry once.
+      if (await AuthGate.instance.ensureLoggedIn()) {
+        try {
+          final scores = await UcasClient.instance.fetchScores();
+          if (mounted) setState(() => _scores = scores);
+          await CacheManager().saveScores(scores);
+        } catch (_) {}
+      } else if (mounted) {
+        setState(() { _error = '验证码已取消'; });
       }
     } catch (e) {
       if (mounted) {

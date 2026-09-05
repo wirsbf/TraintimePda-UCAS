@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import '../data/settings_controller.dart';
 import '../data/cache_manager.dart';
+import '../data/auth_gate.dart';
 import '../data/ucas_client.dart';
-import '../data/login_helper.dart';
 import 'home_shell.dart';
 import 'login_page.dart';
-import 'captcha_dialog.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key, required this.settings});
@@ -57,22 +56,21 @@ class _SplashPageState extends State<SplashPage> {
           _status = '正在同步数据...';
           _progress = 0.5;
         });
-      } on CaptchaRequiredException catch (e) {
-        // Handle captcha if needed during initialization
-        if (mounted) {
-          final code = await showCaptchaDialog(context, e.image);
-          if (code != null) {
-            // Retry with captcha
-            await LoginHelper().loginWithManualCaptcha(
+      } on CaptchaRequiredException {
+        // One coordinated captcha via the global gate; after a successful
+        // solve, re-run initialize() so subsystem (jwxk/xkgo) sessions are
+        // established serially BEFORE the parallel data fetches.
+        if (await AuthGate.instance.ensureLoggedIn()) {
+          try {
+            await client.initialize(
               widget.settings.username,
               widget.settings.password,
-              onManualCaptchaNeeded: mounted ? (img) => showCaptchaDialog(context, img) : null,
             );
-          } else {
-            // User cancelled captcha - proceed anyway, pages will handle it
-            debugPrint('Captcha cancelled during initialization');
+          } catch (_) {
+            // Subsystem auth issues surface again in the fetch phase.
           }
         }
+        // Proceed either way - pages fall back to cache when not logged in.
       } catch (e) {
         debugPrint('Initialization warning: $e');
         // Continue - individual pages will auto-retry

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../data/settings_controller.dart';
+import '../data/auth_gate.dart';
 import '../data/ucas_client.dart';
 import '../model/schedule.dart';
 import '../model/exam.dart';
 import 'schedule_grid.dart';
 import '../util/schedule_utils.dart';
-import 'captcha_dialog.dart';
 import '../data/cache_manager.dart';
 import 'widget/bouncing_button.dart';
 
@@ -141,7 +141,7 @@ class _SchedulePageState extends State<SchedulePage> {
     }
   }
 
-  Future<void> _fetchSchedule({String? captchaCode}) async {
+  Future<void> _fetchSchedule() async {
     if (_loading) {
       return;
     }
@@ -176,15 +176,18 @@ class _SchedulePageState extends State<SchedulePage> {
       }
 
       if (mounted) setState(() => _status = null);
-    } on CaptchaRequiredException catch (e) {
-      if (mounted) {
-        final code = await showCaptchaDialog(context, e.image);
-        if (code != null) {
-          _fetchSchedule(captchaCode: code);
-          return;
-        } else {
-          setState(() => _status = '验证码已取消');
-        }
+    } on CaptchaRequiredException {
+      // One coordinated captcha via the global gate; retry once on success.
+      if (await AuthGate.instance.ensureLoggedIn()) {
+        try {
+          final schedule = await UcasClient.instance.fetchSchedule();
+          if (mounted) {
+            setState(() => _schedule = schedule);
+            CacheManager().saveSchedule(schedule);
+          }
+        } catch (_) {}
+      } else {
+        if (mounted) setState(() => _status = '验证码已取消');
       }
     } catch (e) {
       if (mounted) setState(() => _status = '获取失败: $e');

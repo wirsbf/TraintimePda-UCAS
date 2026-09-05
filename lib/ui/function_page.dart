@@ -7,7 +7,7 @@ import 'webview_page.dart';
 import 'auto_select_page.dart';
 
 import '../data/settings_controller.dart';
-import '../data/ucas_client.dart';
+import '../data/auth_gate.dart';
 
 class FunctionPage extends StatelessWidget {
   final SettingsController settings;
@@ -23,10 +23,10 @@ class FunctionPage extends StatelessWidget {
     );
 
     try {
-      // Force refresh session (auto-login) to ensure cookies are valid for Service Hall
-      if (settings.username.isNotEmpty && settings.password.isNotEmpty) {
-        await UcasClient.instance.login(settings.username, settings.password);
-      }
+      // Ensure session via the global gate (throttled, single dialog);
+      // no forced re-login on every visit - that needlessly burned sessions
+      // and triggered extra captcha prompts.
+      await AuthGate.instance.ensureLoggedIn();
     } catch (e) {
       debugPrint('Auto-login failed: $e');
       // Continue anyway
