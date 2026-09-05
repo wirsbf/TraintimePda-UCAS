@@ -137,9 +137,9 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Future<void> _fetchData({bool force = false}) async {
-    // 1. Login with auto-OCR retry (3 attempts before manual dialog)
+    // 1. Login (manual captcha input when required)
     try {
-      final captchaImage = await LoginHelper().loginWithAutoOcr(
+      final captchaImage = await LoginHelper().loginWithManualCaptcha(
         widget.settings.username,
         widget.settings.password,
         onManualCaptchaNeeded: mounted ? (image) => showCaptchaDialog(context, image) : null,

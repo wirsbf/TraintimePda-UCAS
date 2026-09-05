@@ -63,7 +63,7 @@ class _SplashPageState extends State<SplashPage> {
           final code = await showCaptchaDialog(context, e.image);
           if (code != null) {
             // Retry with captcha
-            await LoginHelper().loginWithAutoOcr(
+            await LoginHelper().loginWithManualCaptcha(
               widget.settings.username,
               widget.settings.password,
               onManualCaptchaNeeded: mounted ? (img) => showCaptchaDialog(context, img) : null,

@@ -6,8 +6,6 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:pointycastle/asymmetric/api.dart';
 import 'package:flutter/foundation.dart';
 
-import '../captcha_ocr.dart';
-
 import 'authentication_service.dart';
 import 'session_manager.dart';
 
@@ -41,34 +39,13 @@ class SepAuthenticationService implements AuthenticationService {
     final loginPage = await _fetchLoginPage();
     final context = _parseLoginContext(loginPage);
 
-    // Handle captcha requirement with auto-OCR
+    // Captcha required: fetch the image once and let the user type it.
+    // (Auto-OCR removed: the ONNX model misread captchas and its retry loop
+    // refreshed the captcha image multiple times per login attempt.)
     String? captchaCode = credentials.captchaCode;
     if (context.captchaRequired && captchaCode == null) {
       final captchaImage = await _fetchCaptchaImage();
-      
-      // Try OCR recognition first (max 3 attempts)
-      for (int attempt = 1; attempt <= 3; attempt++) {
-        final ocrResult = await CaptchaOcr.instance.solveCaptcha(captchaImage);
-        if (ocrResult != null && ocrResult.length >= 4) {
-          captchaCode = ocrResult;
-          debugPrint('[SEP Auth] OCR succeeded on attempt $attempt: $captchaCode');
-          break;
-        }
-        debugPrint('[SEP Auth] OCR attempt $attempt failed');
-        
-        // Fetch new captcha for next attempt
-        if (attempt < 3) {
-          await Future.delayed(const Duration(milliseconds: 300));
-          final newCaptcha = await _fetchCaptchaImage();
-          captchaImage.setAll(0, newCaptcha);
-        }
-      }
-      
-      // If OCR failed after 3 attempts, require manual input
-      if (captchaCode == null) {
-        debugPrint('[SEP Auth] OCR failed 3 times, requesting manual input');
-        return AuthResult.captchaRequired(captchaImage);
-      }
+      return AuthResult.captchaRequired(captchaImage);
     }
 
     final encryptedPassword = _encryptPassword(

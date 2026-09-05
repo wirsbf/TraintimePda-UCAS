@@ -97,6 +97,11 @@ class UcasClient {
   String? _lastUsername;
   String? _lastPassword;
 
+  // Single-flight auth lock: concurrent session-expired errors all funnel
+  // into ONE re-authentication attempt (otherwise parallel fetches each
+  // trigger their own login + captcha dialog and the dialogs stack up).
+  final Map<AuthenticationService, Future<void>> _authFlights = {};
+
   // ========== Public API ==========
 
   /// Initialize client by pre-fetching all authentication cookies
@@ -118,7 +123,7 @@ class UcasClient {
       username: username.contains('@') ? username : '$username@mails.ucas.ac.cn',
       password: password,
     ));
-    
+
     await _authenticateWithRetry(_xkgoAuth, Credentials(
       username: username,
       password: password,
@@ -149,6 +154,17 @@ class UcasClient {
     final cookie = Cookie('session_id', sessionId);
     await _cookieJar.saveFromResponse(
       Uri.parse(_xkgoAuth.baseUrl),
+      [cookie],
+    );
+  }
+
+  /// Manually set SEP JSESSIONID (for testing/debugging).
+  /// Lets tooling reuse an already-authenticated browser session instead of
+  /// solving the captcha interactively.
+  Future<void> setSepSessionId(String jsessionId) async {
+    final cookie = Cookie('JSESSIONID', jsessionId);
+    await _cookieJar.saveFromResponse(
+      Uri.parse('https://sep.ucas.ac.cn'),
       [cookie],
     );
   }
@@ -315,8 +331,28 @@ class UcasClient {
     }
   }
 
-  /// Authenticate with retry logic
+  /// Authenticate with retry logic (single-flight per service)
   Future<void> _authenticateWithRetry(
+    AuthenticationService service,
+    Credentials credentials, {
+    int maxRetries = 3,
+  }) {
+    // Share one in-flight authentication across concurrent callers.
+    final existing = _authFlights[service];
+    if (existing != null) {
+      return existing;
+    }
+
+    final flight = _authenticateWithRetryLocked(service, credentials,
+            maxRetries: maxRetries)
+        .whenComplete(() {
+      _authFlights.remove(service);
+    });
+    _authFlights[service] = flight;
+    return flight;
+  }
+
+  Future<void> _authenticateWithRetryLocked(
     AuthenticationService service,
     Credentials credentials, {
     int maxRetries = 3,

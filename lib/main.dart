@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
 import 'data/settings_controller.dart';
+import 'data/ucas_client.dart';
 import 'ui/splash_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final settings = await SettingsController.load();
+
+  // Debug-only: inject an already-authenticated SEP session.
+  // flutter run -d windows --dart-define=SEP_SESSION=<JSESSIONID>
+  const injectedSepSession = String.fromEnvironment('SEP_SESSION');
+  if (injectedSepSession.isNotEmpty) {
+    await UcasClient.instance.setSepSessionId(injectedSepSession);
+    debugPrint('[E2E] injected SEP session for testing');
+  }
+
   runApp(UcasScheduleApp(settings: settings));
 }
 
