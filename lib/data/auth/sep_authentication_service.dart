@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:encrypter_plus/encrypter_plus.dart';
 import 'package:html/parser.dart' as html_parser;
@@ -14,9 +15,19 @@ import 'session_manager.dart';
 /// Handles login to UCAS Unified Authentication Platform (SEP)
 /// with RSA password encryption and captcha support.
 class SepAuthenticationService implements AuthenticationService {
-  SepAuthenticationService({required Dio dio}) : _dio = dio;
+  SepAuthenticationService({required Dio dio, CookieJar? cookieJar})
+      : _dio = dio,
+        _cookieJar = cookieJar;
 
   final Dio _dio;
+  final CookieJar? _cookieJar;
+
+  /// JSESSIONID of the last session that passed validateSession().
+  /// The SEP server rotates JSESSIONID on EVERY unauthenticated request,
+  /// so a late response from a concurrent validation can overwrite the
+  /// just-authenticated cookie. We restore the known-good session before
+  /// SEP requests to defeat that churn.
+  String? _lastKnownGoodSession;
 
   @override
   SessionType get type => SessionType.sep;
@@ -63,8 +74,42 @@ class SepAuthenticationService implements AuthenticationService {
     return loginResult;
   }
 
+  /// Re-inject the last known-good JSESSIONID if the jar got rotated by a
+  /// concurrent unauthenticated response.
+  Future<void> _restoreKnownGoodSession() async {
+    final good = _lastKnownGoodSession;
+    final jar = _cookieJar;
+    if (good == null || jar == null) return;
+
+    final uri = Uri.parse(baseUrl);
+    final current = await jar.loadForRequest(uri);
+    final currentSid = current
+        .where((c) => c.name == 'JSESSIONID')
+        .map((c) => c.value)
+        .toSet();
+    if (currentSid.length == 1 && currentSid.first == good) return;
+
+    // Jar was churned (empty/rotated/duplicated): reset to the good session.
+    await jar.delete(uri);
+    await jar.saveFromResponse(uri, [Cookie('JSESSIONID', good)]);
+    debugPrint('[SEP] restored known-good session after jar churn');
+  }
+
+  /// Remember the JSESSIONID that just passed validation.
+  Future<void> _rememberCurrentSession() async {
+    final jar = _cookieJar;
+    if (jar == null) return;
+    final uri = Uri.parse(baseUrl);
+    final cookies = await jar.loadForRequest(uri);
+    final sid = cookies.where((c) => c.name == 'JSESSIONID').firstOrNull?.value;
+    if (sid != null && sid.isNotEmpty) {
+      _lastKnownGoodSession = sid;
+    }
+  }
+
   @override
   Future<bool> validateSession() async {
+    await _restoreKnownGoodSession();
     try {
       final response = await _dio.get<String>(
         '$baseUrl$_validationPath',
@@ -76,18 +121,20 @@ class SepAuthenticationService implements AuthenticationService {
       );
 
       // Redirect handling (SEP migrated some redirects from 302 to 303).
-      // CRITICAL: once a subsystem (jwxk/xkgo) login has happened, the
-      // portal remembers the active role and REDIRECTS this page into the
-      // subsystem SSO even though the SEP session is perfectly VALID.
       // Only a redirect back to the login page means the session is dead.
       if (response.statusCode == 302 || response.statusCode == 303) {
         final location = response.headers.value('location') ?? '';
+        final sc2 = response.headers.map['set-cookie']?.join(' | ') ?? '-';
+        debugPrint('[SEP] validateSession: ${response.statusCode} -> $location, set-cookie=$sc2');
         if (location.contains('loginFrom') || location.contains('slogin')) {
           return false;
         }
         // Redirect into a subsystem SSO flow = still logged in.
         return true;
       }
+      final sc = response.headers.map['set-cookie']?.join(' | ') ?? '-';
+      debugPrint('[SEP] validateSession: ${response.statusCode}, '
+          'hasKey=${(response.data ?? '').contains('jsePubKey')}, set-cookie=$sc');
 
       // Login page content means session invalid
       final body = response.data ?? '';
@@ -95,6 +142,9 @@ class SepAuthenticationService implements AuthenticationService {
         return false;
       }
 
+      if (response.statusCode == 200) {
+        await _rememberCurrentSession();
+      }
       return response.statusCode == 200;
     } catch (_) {
       return false;
@@ -145,6 +195,11 @@ class SepAuthenticationService implements AuthenticationService {
       'sb': 'sb',
     };
 
+    // Post WITHOUT auto-following redirects: dio's redirect handling drops
+    // intermediate Set-Cookie headers of the 303 chain, so the jar ends up
+    // with an unauthenticated session cookie from the landing page (the
+    // authenticated one from the POST itself gets lost). Following each hop
+    // as a separate request applies cookies in order, like a browser.
     final response = await _dio.post<String>(
       '$baseUrl$_loginPath',
       data: params,
@@ -152,11 +207,31 @@ class SepAuthenticationService implements AuthenticationService {
         contentType: Headers.formUrlEncodedContentType,
         responseType: ResponseType.plain,
         headers: {'Origin': baseUrl, 'Referer': baseUrl},
+        followRedirects: false,
         validateStatus: (status) => status != null && status < 500,
       ),
     );
 
-    final body = response.data ?? '';
+    // Manually follow the 303 chain (max 6 hops). Error detection relies on
+    // the HTML of the FINAL landing page (login errors render there).
+    var body = response.data ?? '';
+    var redirectLocation = response.headers.value('location');
+    var hopCount = 0;
+    while (redirectLocation != null && hopCount < 6) {
+      final nextUri = Uri.parse('$baseUrl/').resolve(redirectLocation);
+      final hopResp = await _dio.get<String>(
+        nextUri.toString(),
+        options: Options(
+          responseType: ResponseType.plain,
+          followRedirects: false,
+          headers: {'Referer': baseUrl},
+          validateStatus: (status) => status != null && status < 500,
+        ),
+      );
+      body = hopResp.data ?? body;
+      redirectLocation = hopResp.headers.value('location');
+      hopCount++;
+    }
 
     // Check for specific error messages (guard clauses)
     if (body.contains('用户名或密码错误') || body.contains('密码错误')) {

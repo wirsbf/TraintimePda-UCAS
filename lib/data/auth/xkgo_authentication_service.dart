@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:html/parser.dart' as html_parser;
 
@@ -156,9 +157,11 @@ class XkgoAuthenticationService implements AuthenticationService {
     // itself (i.e. the redirect chain did not leave the portal, meaning the
     // session was not established on any course system).
     // 2026-09 抓包实证: 9月门户仍指向 xkgo:3000，按月猜测会错选 xkgodj。
+    debugPrint('[XKGO] discovered base: $discoveredBase');
     if (!discoveredBase.contains('sep.ucas.ac.cn')) {
       _dynamicBaseUrl = discoveredBase;
     } else {
+      debugPrint('[XKGO] discovery stayed on SEP portal, falling back');
       _dynamicBaseUrl ??= _getCurrentXkgoBase();
     }
 

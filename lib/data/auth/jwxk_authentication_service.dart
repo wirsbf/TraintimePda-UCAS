@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:html/parser.dart' as html_parser;
 
@@ -48,6 +49,7 @@ class JwxkAuthenticationService implements AuthenticationService {
 
     // Get Identity token from portal
     final identity = await _getPortalIdentity();
+    debugPrint('[JWXK] identity from portal: ${identity == null ? "NULL" : identity.substring(0, 8)}');
     if (identity == null) {
       return AuthResult.failure('Failed to obtain Identity token from SEP portal');
     }
@@ -58,15 +60,19 @@ class JwxkAuthenticationService implements AuthenticationService {
     final jwxkLoginUrl = '$baseUrl$_loginPath?Identity=$identity&roleId=xs&fromUrl=1&toUrl=$encodedToUrl';
 
     try {
-      await _getFollow(jwxkLoginUrl);
+      final resp = await _getFollow(jwxkLoginUrl);
+      debugPrint('[JWXK] login chain landed: ${resp.realUri} (${resp.statusCode})');
       
       // Verify login success
       if (await validateSession()) {
+        debugPrint('[JWXK] session VALID');
         return AuthResult.success([]);
       }
       
+      debugPrint('[JWXK] session INVALID after login');
       return AuthResult.failure('JWXK login failed: session not established');
     } catch (e) {
+      debugPrint('[JWXK] login error: $e');
       return AuthResult.failure('JWXK login error: $e');
     }
   }

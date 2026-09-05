@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:dio/io.dart';
 
@@ -58,11 +59,20 @@ class UcasClient {
         _sessionManager = SessionManager() {
     if (dio == null) {
       _dio.interceptors.add(CookieManager(_cookieJar));
+      // Temporary diagnostic: log cookies sent to SEP
+      _dio.interceptors.add(InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.uri.host.contains('sep.ucas.ac.cn')) {
+            debugPrint('[COOKIE] ${options.uri.path} <= ${options.headers['Cookie'] ?? '(none)'}');
+          }
+          return handler.next(options);
+        },
+      ));
       _configureHttpClient();
     }
 
     // Initialize services with dependency injection
-    _sepAuth = SepAuthenticationService(dio: _dio);
+    _sepAuth = SepAuthenticationService(dio: _dio, cookieJar: _cookieJar);
     _jwxkAuth = JwxkAuthenticationService(dio: _dio, sepAuth: _sepAuth);
     _xkgoAuth = XkgoAuthenticationService(dio: _dio, sepAuth: _sepAuth);
 
@@ -391,6 +401,11 @@ class UcasClient {
         if (result.success) {
           if (result.cookies != null && result.cookies!.isNotEmpty) {
             await _sessionManager.saveSession(service.type, result.cookies!);
+          } else {
+            // Auth succeeded without explicit cookies (e.g. SEP login via
+            // the shared jar): force the next validation to re-check for
+            // real instead of trusting the stale cached "false".
+            _sessionManager.invalidateCache(service.type);
           }
           return;
         }
