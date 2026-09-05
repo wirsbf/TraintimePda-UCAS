@@ -157,6 +157,8 @@ jobs:
         run: |
           (Get-Content pubspec.yaml) -replace '^version: .*', "version: ${{ needs.version.outputs.version }}" | Set-Content pubspec.yaml
       
+      - run: flutter build windows --release
+
       - name: Archive Windows Build
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath traintime_pda_ucas_windows_${{ needs.version.outputs.tag }}.zip
       
@@ -187,6 +189,8 @@ jobs:
         run: |
           sed -i "s/^version: .*/version: ${{ needs.version.outputs.version }}/" pubspec.yaml
       
+      - run: flutter build linux --release
+
       - name: Archive Linux Build
         run: tar -czvf traintime_pda_ucas_linux_${{ needs.version.outputs.tag }}.tar.gz -C build/linux/x64/release/bundle .
       
@@ -212,6 +216,8 @@ jobs:
         run: |
           sed -i '' "s/^version: .*/version: ${{ needs.version.outputs.version }}/" pubspec.yaml
       
+      - run: flutter build macos --release
+
       - name: Archive macOS Build
         run: ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Release/traintime_pda_ucas.app traintime_pda_ucas_macos_${{ needs.version.outputs.tag }}.zip
       
